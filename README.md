@@ -14,6 +14,11 @@ trains all three on the same task, the MoleculeNet **ESOL** solubility
 benchmark, with the same data split and metrics. The models are short,
 readable PyTorch files, made for learning how GNNs work.
 
+**Keywords:** graph neural networks (GNN), graph convolutional network (GCN),
+message passing neural network (MPNN), diffusion convolutional neural network
+(DCNN), PyTorch Geometric, RDKit, cheminformatics, molecular property
+prediction, SMILES, MoleculeNet, ESOL, aqueous solubility, drug discovery.
+
 ```mermaid
 flowchart LR
     S["SMILES<br/>CCO"] -- RDKit --> G["graph<br/>atoms × 9 features<br/>bonds × 3 features"]
