@@ -58,14 +58,17 @@ Metrics of the best-validation checkpoint on the **112 held-out test molecules**
 
 | Model | Parameters | Best epoch | Test RMSE | Test MAE | Test R² |
 |-------|-----------:|-----------:|----------:|---------:|--------:|
-| GCN   | 1,009  | 297 / 300 | 0.981 | 0.749 | 0.711 |
-| MPNN  | 40,097 | running   |       |       |       |
-| DCNN  | 1,791  | running   |       |       |       |
+| GCN   | 1,009  | 297 (ran 300)              | 0.981 | 0.749 | 0.711 |
+| MPNN  | 40,097 | 195 (early stop at 296)    | **0.645** | **0.468** | **0.875** |
+| DCNN  | 1,791  | 144 (early stop at 245)    | 0.907 | 0.659 | 0.753 |
 
-One seed on a small dataset, so differences of a few hundredths are noise.
-The GCN was still improving at epoch 300; `--epochs 1000` would go further.
+The MPNN, the only model that reads bond types, is clearly best. One seed on a
+small dataset, so differences of a few hundredths are noise. The GCN was still
+improving at epoch 300; `--epochs 1000` would go further.
 
-![GCN training curves](docs/images/gcn-curves.png)
+| GCN | MPNN | DCNN |
+|:---:|:---:|:---:|
+| ![GCN](docs/images/gcn-curves.png) | ![MPNN](docs/images/mpnn-curves.png) | ![DCNN](docs/images/dcnn-curves.png) |
 
 ### Original notebook runs (`legacy/`)
 
