@@ -19,6 +19,7 @@ run the command above.
 mgnn-train --model gcn
 mgnn-train --model mpnn
 mgnn-train --model dcnn
+mgnn-train --model gin          # also: gat, sage, attentivefp
 ```
 
 The first run downloads ESOL into `data/`. Each run:
@@ -40,23 +41,33 @@ Everything is written to `checkpoints/<model>/` (or `--output-dir`):
 
 ## Options
 
-Every option has a default that comes from the original notebooks; you only
-pass what you want to change.
+Every option has a sensible default per model; pass only what you want to change.
 
-| Flag | GCN | MPNN | DCNN | Meaning |
-|------|----:|-----:|-----:|---------|
-| `--hidden` | 16 | 32 | 128 | hidden size (DCNN: size of the MLP head) |
-| `--layers` | 4 | 6 | 4 | number of graph layers |
-| `--hops` | – | – | 2 | diffusion hops (DCNN only) |
-| `--dropout` | 0.0 | – | 0.1 | dropout (the MPNN has none) |
-| `--batch-size` | 64 | 64 | 32 | molecules per batch |
-| `--lr` | 5e-4 | 5e-4 | 5e-4 | Adam learning rate |
-| `--epochs` | 300 | 300 | 300 | maximum epochs |
-| `--patience` | 100 | 100 | 100 | early-stopping patience, `0` turns it off |
-| `--seed` | 42 | 42 | 42 | split shuffle and weight init |
-| `--device` | auto | auto | auto | `cpu`, `cuda`, `mps` or `auto` |
-| `--data-dir` | data | data | data | where ESOL is stored |
-| `--output-dir` | checkpoints/gcn | checkpoints/mpnn | checkpoints/dcnn | where results go |
+| Flag | Default | Meaning |
+|------|---------|---------|
+| `--model` | `gcn` | `gcn`, `mpnn`, `dcnn`, `gin`, `gat`, `sage` or `attentivefp` |
+| `--epochs` | 300 | maximum epochs |
+| `--patience` | 100 | early-stopping patience in epochs, `0` turns it off |
+| `--lr` | 5e-4 | Adam learning rate |
+| `--hidden`, `--layers`, `--dropout`, `--batch-size` | per model, below | model size and regularisation |
+| `--hops` | 2 | DCNN only: diffusion hops |
+| `--heads` | 4 | GAT only: attention heads (`hidden` must be divisible by it) |
+| `--seed` | 42 | split shuffle and weight init |
+| `--device` | auto | `cpu`, `cuda`, `mps` or `auto` |
+| `--data-dir` | `data` | where ESOL is stored |
+| `--output-dir` | `checkpoints/<model>` | where results go |
+
+Per-model defaults (GCN, MPNN, DCNN from the original notebooks):
+
+| Model | hidden | layers | dropout | batch size | bond features |
+|-------|-------:|-------:|--------:|-----------:|:-------------:|
+| gcn | 16 | 4 | 0.0 | 64 | no |
+| mpnn | 32 | 6 | – | 64 | yes |
+| dcnn | 128 (MLP head) | 4 | 0.1 | 32 | no |
+| gin | 64 | 4 | 0.1 | 64 | yes |
+| gat | 64 | 4 | 0.1 | 64 | yes |
+| sage | 64 | 4 | 0.0 | 64 | no |
+| attentivefp | 200 | 2 | 0.2 | 64 | yes |
 
 Examples:
 
@@ -78,7 +89,7 @@ print(final["test"])     # {'loss': ..., 'mae': ..., 'mse': ..., 'rmse': ..., 'r
 
 `fit(cfg, graphs=my_graphs)` trains on your own list of PyG `Data` objects
 instead of ESOL. Each needs `x` (9 features per node), `edge_index`, `y` and,
-for the MPNN, `edge_attr` (3 features per edge); change `node_dim` / `edge_dim`
+for models that use bonds, `edge_attr` (3 features per edge); change `node_dim` / `edge_dim`
 in the config for other sizes.
 
 ## Reading the metrics

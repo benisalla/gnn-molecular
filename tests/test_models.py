@@ -2,7 +2,7 @@ import pytest
 import torch
 from conftest import permute_batch, within_graph_perm
 
-from mgnn.config import Config
+from mgnn.config import MODELS, Config
 from mgnn.models import DCNN, MPNN, GDCNNModel, build_model
 
 
@@ -10,13 +10,13 @@ def run(model, batch):
     return model(x=batch.x.float(), e_idx=batch.edge_index, b_idx=batch.batch, e_attr=batch.edge_attr.float())
 
 
-@pytest.mark.parametrize("name", ["gcn", "mpnn", "dcnn"])
+@pytest.mark.parametrize("name", MODELS)
 def test_output_shape(name, batch):
     model = build_model(Config.for_model(name)).eval()
     assert run(model, batch).shape == (batch.num_graphs, 1)
 
 
-@pytest.mark.parametrize("name", ["gcn", "mpnn", "dcnn"])
+@pytest.mark.parametrize("name", MODELS)
 def test_graph_output_is_permutation_invariant(name, batch):
     """Renumbering the atoms of a molecule must not change its prediction."""
     model = build_model(Config.for_model(name)).eval()
@@ -34,15 +34,20 @@ def test_mpnn_layer_is_permutation_equivariant(batch):
     torch.testing.assert_close(out_p, out[perm], atol=1e-5, rtol=1e-5)
 
 
-def test_mpnn_uses_bond_features(batch):
-    model = build_model(Config.for_model("mpnn")).eval()
+BOND_MODELS = ["mpnn", "gin", "gat", "attentivefp"]
+
+
+@pytest.mark.parametrize("name", BOND_MODELS)
+def test_bond_models_use_bond_features(name, batch):
+    model = build_model(Config.for_model(name)).eval()
     changed = batch.clone()
     changed.edge_attr = batch.edge_attr + 1
     assert not torch.allclose(run(model, batch), run(model, changed))
 
 
-def test_mpnn_runs_without_bond_features(batch):
-    model = build_model(Config.for_model("mpnn")).eval()
+@pytest.mark.parametrize("name", BOND_MODELS)
+def test_bond_models_run_without_bond_features(name, batch):
+    model = build_model(Config.for_model(name)).eval()
     out = model(x=batch.x.float(), e_idx=batch.edge_index, b_idx=batch.batch)
     assert out.shape == (batch.num_graphs, 1)
 
@@ -69,7 +74,7 @@ def test_dcnn_layer_shape():
     assert layer(P, torch.rand(3, 5, 9)).shape == (3, 5, 9)
 
 
-@pytest.mark.parametrize("name", ["gcn", "mpnn", "dcnn"])
+@pytest.mark.parametrize("name", MODELS)
 def test_prediction_does_not_depend_on_other_graphs_in_batch(name, graphs):
     """Padding (DCNN) or batching must not leak between molecules."""
     from torch_geometric.data import Batch
@@ -81,7 +86,7 @@ def test_prediction_does_not_depend_on_other_graphs_in_batch(name, graphs):
     torch.testing.assert_close(alone[0], with_big[0], atol=1e-5, rtol=1e-5)
 
 
-@pytest.mark.parametrize("name", ["gcn", "mpnn", "dcnn"])
+@pytest.mark.parametrize("name", MODELS)
 def test_every_parameter_gets_a_gradient(name, batch):
     model = build_model(Config.for_model(name)).train()
     run(model, batch).sum().backward()
@@ -89,7 +94,7 @@ def test_every_parameter_gets_a_gradient(name, batch):
     assert not missing, missing
 
 
-@pytest.mark.parametrize("name", ["gcn", "mpnn", "dcnn"])
+@pytest.mark.parametrize("name", MODELS)
 def test_can_overfit_one_batch(name, batch):
     """If a model cannot memorise 6 molecules, something is wired wrong."""
     model = build_model(Config.for_model(name, dropout=0.0)).train()

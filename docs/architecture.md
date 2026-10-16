@@ -35,7 +35,7 @@ Pooling uses `b_idx` to turn atom vectors back into one vector per molecule.
 model(x, e_idx, b_idx, e_attr=None) -> [n_molecules, 1]
 ```
 
-All three models take the same arguments, so the training loop does not care
+All seven models take the same arguments, so the training loop does not care
 which one it is training. The loss is the mean squared error against `y`.
 
 ## GCN: graph convolution (`GCNModel`)
@@ -94,10 +94,40 @@ It works on dense, padded tensors (`to_dense_adj`, `to_dense_batch`), so the
 memory cost grows with the square of the largest molecule in the batch. The
 mean pooling uses the padding mask, so padded rows never count.
 
+## Four more standard GNNs
+
+GIN, GAT, GraphSAGE and AttentiveFP use layers from PyTorch Geometric. GIN, GAT
+and GraphSAGE share one simple recipe, so the only thing that changes between
+them is the layer:
+
+```
+x [N, 9] ─ Linear → [N, 64] ─ (h = h + dropout(ReLU(layer(h)))) × 4 ─ pool [B, 128] ─ Linear → [B, 1]
+```
+
+| Model | One layer, for atom i | Pooling |
+|-------|-----------------------|---------|
+| **GIN** (`GINEConv`) | `h_i' = MLP( h_i + Σ_j ReLU(h_j + W·e_ij) )` | sum ; mean |
+| **GAT** (`GATv2Conv`, 4 heads) | `h_i' = Σ_j α_ij · W h_j`, with attention `α_ij` computed from `h_i`, `h_j` and the bond `e_ij` | max ; mean |
+| **GraphSAGE** (`SAGEConv`) | `h_i' = W1·h_i + W2·mean_j(h_j)` | max ; mean |
+
+- **GIN** uses a *sum* and an MLP. A mean cannot tell one carbon neighbour from
+  three, a sum can; this makes GIN as discriminative as the Weisfeiler-Lehman
+  graph test. The GINE variant adds the bond features to every message.
+- **GAT** learns a weight per neighbour instead of treating all neighbours
+  equally. GATv2 fixes a limitation of the original GAT (its attention ranking
+  could not depend on the receiving atom).
+- **GraphSAGE** is the GCN with one change: the atom's own vector gets its own
+  weight matrix, separate from its neighbours' mean.
+
+**AttentiveFP** (`torch_geometric.nn.models.AttentiveFP`) was designed for
+molecules. It runs graph attention with bond features over the atoms (GRU
+updates), then reads out the molecule with a learned "super node" that attends
+over all atoms for a few rounds, instead of a fixed mean or sum.
+
 ## Sanity properties (all checked in `tests/test_models.py`)
 
 - **Permutation invariance**: renumbering the atoms of a molecule does not change
-  its prediction (all three models).
+  its prediction (all seven models).
 - **Permutation equivariance**: one MPNN layer's atom outputs move with the atoms.
 - **Batch independence**: a molecule gets the same prediction alone or in a batch
   with bigger molecules (this caught padding leaking into the DCNN mean).

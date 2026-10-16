@@ -1,6 +1,6 @@
 # Multi-Graph-NN
 
-**Three graph neural networks (GCN, MPNN, DCNN) that predict how well a molecule dissolves in water, straight from its graph of atoms and bonds.**
+**Seven graph neural networks (GCN, MPNN, DCNN, GIN, GAT, GraphSAGE, AttentiveFP) that predict how well a molecule dissolves in water, straight from its graph of atoms and bonds.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
@@ -9,29 +9,36 @@
 [![Dataset: ESOL](https://img.shields.io/badge/dataset-MoleculeNet%20ESOL-orange.svg)](https://moleculenet.org/datasets-1)
 
 A molecule is a graph: atoms are nodes, bonds are edges. This repository
-implements three classic ways for a neural network to read that graph, and
-trains all three on the same task, the MoleculeNet **ESOL** solubility
-benchmark, with the same data split and metrics. The models are short,
-readable PyTorch files, made for learning how GNNs work.
+implements seven well-known ways for a neural network to read that graph, and
+trains all of them on the same task, the MoleculeNet **ESOL** solubility
+benchmark, with the same data split and metrics. GCN, MPNN and DCNN are written
+out by hand (from my original notebooks); GIN, GAT, GraphSAGE and AttentiveFP
+are built from PyTorch Geometric layers. Every model is a short, readable
+PyTorch class with the same interface, made for learning how GNNs work.
 
 **Keywords:** graph neural networks (GNN), graph convolutional network (GCN),
 message passing neural network (MPNN), diffusion convolutional neural network
-(DCNN), PyTorch Geometric, RDKit, cheminformatics, molecular property
+(DCNN), graph isomorphism network (GIN), graph attention network (GAT, GATv2),
+GraphSAGE, Attentive FP, PyTorch Geometric, RDKit, cheminformatics, molecular property
 prediction, SMILES, MoleculeNet, ESOL, aqueous solubility, drug discovery.
 
 ```mermaid
 flowchart LR
     S["SMILES<br/>CCO"] -- RDKit --> G["graph<br/>atoms × 9 features<br/>bonds × 3 features"]
-    G --> M{"GCN · MPNN · DCNN<br/>update every atom<br/>from its neighbours"}
+    G --> M{"GCN · MPNN · DCNN · GIN<br/>GAT · GraphSAGE · AttentiveFP<br/>update every atom<br/>from its neighbours"}
     M --> P["pool atoms<br/>→ 1 vector per molecule"]
     P --> Y["log solubility<br/>(mol/L)"]
 ```
 
-| Model | Idea | Uses bond types |
-|-------|------|:---------------:|
-| **GCN** | each atom averages its neighbours (graph convolution) | no |
-| **MPNN** | neighbours send learned *messages* that depend on the bond | yes |
-| **DCNN** | look 0, 1, …, K random-walk steps away at once (diffusion) | no |
+| Model | Idea | Uses bond types | Paper |
+|-------|------|:---------------:|-------|
+| **GCN** | each atom averages its neighbours (graph convolution) | no | [Kipf & Welling, 2017](https://arxiv.org/abs/1609.02907) |
+| **MPNN** | neighbours send learned *messages* that depend on the bond | yes | [Gilmer et al., 2017](https://arxiv.org/abs/1704.01212) |
+| **DCNN** | look 0, 1, …, K random-walk steps away at once (diffusion) | no | [Atwood & Towsley, 2016](https://arxiv.org/abs/1511.02136) |
+| **GIN** | sum the neighbours, then an MLP: as expressive as the WL graph test (GINE variant with bonds) | yes | [Xu et al., 2019](https://arxiv.org/abs/1810.00826), [Hu et al., 2020](https://arxiv.org/abs/1905.12265) |
+| **GAT** | learn *how much* to listen to each neighbour (attention, GATv2) | yes | [Brody et al., 2022](https://arxiv.org/abs/2105.14491) |
+| **GraphSAGE** | separate weights for "me" and "the mean of my neighbours" | no | [Hamilton et al., 2017](https://arxiv.org/abs/1706.02216) |
+| **AttentiveFP** | attention between atoms + an attention readout over the molecule; built for chemistry | yes | [Xiong et al., 2020](https://pubs.acs.org/doi/10.1021/acs.jmedchem.9b00959) |
 
 ## Quick start
 
@@ -45,7 +52,7 @@ pip install -e '.[dev]'
 pytest
 
 # 3. train (downloads ESOL on the first run, ~100 KB; a CPU is enough)
-mgnn-train --model gcn        # or mpnn, dcnn
+mgnn-train --model gcn        # or mpnn, dcnn, gin, gat, sage, attentivefp
 
 # 4. predict the solubility of any molecule
 mgnn-predict --checkpoint checkpoints/gcn/best.pt "CCO" "c1ccccc1"
@@ -63,17 +70,34 @@ Metrics of the best-validation checkpoint on the **112 held-out test molecules**
 
 | Model | Parameters | Best epoch | Test RMSE | Test MAE | Test R² |
 |-------|-----------:|-----------:|----------:|---------:|--------:|
-| GCN   | 1,009  | 297 (ran 300)              | 0.981 | 0.749 | 0.711 |
-| MPNN  | 40,097 | 195 (early stop at 296)    | **0.645** | **0.468** | **0.875** |
-| DCNN  | 1,791  | 144 (early stop at 245)    | 0.907 | 0.659 | 0.753 |
+| **AttentiveFP** | 888,201 | 222 (ran 300)           | **0.498** | **0.346** | **0.926** |
+| GIN             | 35,585  | 224 (ran 300)           | 0.528 | 0.408 | 0.916 |
+| MPNN            | 40,097  | 195 (early stop at 296) | 0.645 | 0.468 | 0.875 |
+| GAT             | 35,329  | 271 (ran 300)           | 0.769 | 0.566 | 0.822 |
+| GraphSAGE       | 33,793  | 298 (ran 300)           | 0.816 | 0.608 | 0.800 |
+| DCNN            | 1,791   | 144 (early stop at 245) | 0.907 | 0.659 | 0.753 |
+| GCN             | 1,009   | 297 (ran 300)           | 0.981 | 0.749 | 0.711 |
 
-The MPNN, the only model that reads bond types, is clearly best. One seed on a
-small dataset, so differences of a few hundredths are noise. The GCN was still
-improving at epoch 300; `--epochs 1000` would go further.
+What the table says:
 
-| GCN | MPNN | DCNN |
+- **Bond features matter.** The four best models (AttentiveFP, GIN, MPNN, GAT) all
+  read bond types; the three that only see atoms (GraphSAGE, DCNN, GCN) come last.
+- **AttentiveFP**, the one model designed for chemistry, is best, but with 25×
+  more parameters than GIN, which comes very close.
+- **Sum beats mean.** GIN (sum aggregation) clearly beats GraphSAGE and GCN (mean
+  aggregation): a sum can count neighbours, a mean cannot.
+
+One seed on a small dataset (112 test molecules): differences of a few
+hundredths are noise. To compare fairly, run each model with a few `--seed`
+values. Models that stopped at 300 epochs were still improving slightly.
+
+| AttentiveFP | GIN | MPNN |
 |:---:|:---:|:---:|
-| ![GCN](docs/images/gcn-curves.png) | ![MPNN](docs/images/mpnn-curves.png) | ![DCNN](docs/images/dcnn-curves.png) |
+| ![AttentiveFP](docs/images/attentivefp-curves.png) | ![GIN](docs/images/gin-curves.png) | ![MPNN](docs/images/mpnn-curves.png) |
+
+| GAT | GraphSAGE | DCNN | GCN |
+|:---:|:---:|:---:|:---:|
+| ![GAT](docs/images/gat-curves.png) | ![GraphSAGE](docs/images/sage-curves.png) | ![DCNN](docs/images/dcnn-curves.png) | ![GCN](docs/images/gcn-curves.png) |
 
 ### Original notebook runs (`legacy/`)
 
@@ -120,7 +144,8 @@ out = model(x=batch.x.float(), e_idx=batch.edge_index, b_idx=batch.batch)   # [n
 src/mgnn/              the package (read in this order)
   config.py            every hyperparameter, with per-model defaults
   data.py              load ESOL, drop broken molecules, split 80/10/10, SMILES -> graph
-  models.py            GCNModel, MPNN + MPNNModel, DCNN + GDCNNModel, build_model()
+  models.py            GCNModel, MPNN + MPNNModel, DCNN + GDCNNModel (from the notebooks),
+                       GINModel, GATModel, SAGEModel, AttentiveFPModel, build_model()
   metrics.py           MAE / MSE / RMSE / R² and the training-curve figure
   train.py             training loop, best-checkpoint selection, the mgnn-train command
   predict.py           load a checkpoint, the mgnn-predict command

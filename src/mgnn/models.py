@@ -1,4 +1,7 @@
-"""Three graph neural networks for graph-level regression.
+"""Seven graph neural networks for graph-level regression.
+
+GCN, MPNN and DCNN come from the original notebooks (see legacy/); GIN, GAT,
+GraphSAGE and AttentiveFP are standard architectures built from PyG layers.
 
 All models share one call signature so the training loop does not care which
 one it trains:
@@ -14,7 +17,17 @@ one it trains:
 import torch
 import torch.nn.functional as F
 from torch import nn
-from torch_geometric.nn import GCNConv, MessagePassing, global_max_pool, global_mean_pool
+from torch_geometric.nn import (
+    AttentiveFP,
+    GATv2Conv,
+    GCNConv,
+    GINEConv,
+    MessagePassing,
+    SAGEConv,
+    global_add_pool,
+    global_max_pool,
+    global_mean_pool,
+)
 from torch_geometric.utils import to_dense_adj, to_dense_batch
 
 from mgnn.config import Config
@@ -182,6 +195,126 @@ class GDCNNModel(nn.Module):
         return torch.stack(Pi, dim=1)
 
 
+# ------------------------------------------------- more standard GNNs (PyG layers)
+#
+# Four widely used architectures, added next to the three from the notebooks.
+# They follow one simple recipe so they are easy to compare:
+#
+#   x [N, 9] ─ Linear → [N, hidden] ─ (h = h + dropout(ReLU(conv(h)))) × layers ─ pool ─ Linear → [B, 1]
+
+
+def _bond_features(e_attr, e_idx, edge_dim):
+    """Bond features, or zeros when a graph has none (keeps the input size fixed)."""
+    if e_attr is None:
+        return e_idx.new_zeros(e_idx.size(1), edge_dim, dtype=torch.float)
+    return e_attr
+
+
+class GINModel(nn.Module):
+    """Graph Isomorphism Network with bond features (GINE, Hu et al. 2020).
+
+    h_i' = MLP( h_i + Σ_j ReLU(h_j + W e_ij) ). Sum aggregation + an MLP makes GIN
+    as good as the Weisfeiler-Lehman test at telling graphs apart; GINE adds bonds.
+    """
+
+    def __init__(self, node_dim: int, edge_dim: int, hidden: int, n_layers: int, drop_rate: float = 0.0):
+        super().__init__()
+        self.edge_dim = edge_dim
+        self.embed = nn.Linear(node_dim, hidden)
+        mlp = lambda: nn.Sequential(
+            nn.Linear(hidden, hidden), nn.BatchNorm1d(hidden), nn.ReLU(), nn.Linear(hidden, hidden)
+        )
+        self.convs = nn.ModuleList(GINEConv(mlp(), edge_dim=edge_dim) for _ in range(n_layers))
+        self.dropout = nn.Dropout(drop_rate)
+        self.head = nn.Linear(2 * hidden, 1)
+
+    def forward(self, x, e_idx, b_idx, e_attr=None):
+        e_attr = _bond_features(e_attr, e_idx, self.edge_dim)
+        h = self.embed(x)
+        for conv in self.convs:
+            h = h + self.dropout(F.relu(conv(h, e_idx, e_attr)))
+        # sum pooling keeps "how many" (GIN's choice), mean pooling keeps "what kind"
+        return self.head(torch.cat([global_add_pool(h, b_idx), global_mean_pool(h, b_idx)], dim=1))
+
+
+class GATModel(nn.Module):
+    """Graph attention (GATv2, Brody et al. 2022) with bond features.
+
+    Each atom learns how much to listen to each neighbour: attention weights come
+    from both atoms and the bond, then neighbours are averaged with those weights.
+    """
+
+    def __init__(
+        self, node_dim: int, edge_dim: int, hidden: int, n_layers: int, heads: int = 4, drop_rate: float = 0.0
+    ):
+        super().__init__()
+        if hidden % heads:
+            raise ValueError("hidden must be divisible by heads")
+        self.edge_dim = edge_dim
+        self.embed = nn.Linear(node_dim, hidden)
+        # heads × (hidden / heads) channels, concatenated back to `hidden`
+        self.convs = nn.ModuleList(
+            GATv2Conv(hidden, hidden // heads, heads=heads, edge_dim=edge_dim) for _ in range(n_layers)
+        )
+        self.dropout = nn.Dropout(drop_rate)
+        self.head = nn.Linear(2 * hidden, 1)
+
+    def forward(self, x, e_idx, b_idx, e_attr=None):
+        e_attr = _bond_features(e_attr, e_idx, self.edge_dim)
+        h = self.embed(x)
+        for conv in self.convs:
+            h = h + self.dropout(F.relu(conv(h, e_idx, e_attr)))
+        return self.head(torch.cat([global_max_pool(h, b_idx), global_mean_pool(h, b_idx)], dim=1))
+
+
+class SAGEModel(nn.Module):
+    """GraphSAGE (Hamilton et al. 2017): h_i' = W1 h_i + W2 · mean_j(h_j).
+
+    Unlike the GCN, the atom's own vector and its neighbours' mean get separate
+    weights, so the model can tell "me" from "my neighbourhood". No bond features.
+    """
+
+    def __init__(self, node_dim: int, hidden: int, n_layers: int, drop_rate: float = 0.0):
+        super().__init__()
+        self.embed = nn.Linear(node_dim, hidden)
+        self.convs = nn.ModuleList(SAGEConv(hidden, hidden) for _ in range(n_layers))
+        self.dropout = nn.Dropout(drop_rate)
+        self.head = nn.Linear(2 * hidden, 1)
+
+    def forward(self, x, e_idx, b_idx, e_attr=None):
+        h = self.embed(x)
+        for conv in self.convs:
+            h = h + self.dropout(F.relu(conv(h, e_idx)))
+        return self.head(torch.cat([global_max_pool(h, b_idx), global_mean_pool(h, b_idx)], dim=1))
+
+
+class AttentiveFPModel(nn.Module):
+    """Attentive FP (Xiong et al. 2020), a GNN designed for molecules.
+
+    Graph attention between atoms (with bond features) plus an attention-based
+    readout: a "super node" for the whole molecule attends over its atoms for a
+    few rounds (GRU updates) instead of a plain mean. Uses PyG's implementation.
+    """
+
+    def __init__(
+        self, node_dim: int, edge_dim: int, hidden: int, n_layers: int, timesteps: int = 2, drop_rate: float = 0.0
+    ):
+        super().__init__()
+        self.edge_dim = edge_dim
+        self.net = AttentiveFP(
+            in_channels=node_dim,
+            hidden_channels=hidden,
+            out_channels=1,
+            edge_dim=edge_dim,
+            num_layers=n_layers,
+            num_timesteps=timesteps,
+            dropout=drop_rate,
+        )
+
+    def forward(self, x, e_idx, b_idx, e_attr=None):
+        return self.net(x, e_idx, _bond_features(e_attr, e_idx, self.edge_dim), b_idx)
+
+
 # ---------------------------------------------------------------------- factory
 
 
@@ -196,6 +329,14 @@ def build_model(cfg: Config) -> nn.Module:
         return GDCNNModel(
             n_hop=cfg.hops, n_hide=cfg.hidden, n_feature=cfg.node_dim, n_dcnn=cfg.layers, d_rate=cfg.dropout
         )
+    if cfg.model == "gin":
+        return GINModel(cfg.node_dim, cfg.edge_dim, cfg.hidden, cfg.layers, drop_rate=cfg.dropout)
+    if cfg.model == "gat":
+        return GATModel(cfg.node_dim, cfg.edge_dim, cfg.hidden, cfg.layers, heads=cfg.heads, drop_rate=cfg.dropout)
+    if cfg.model == "sage":
+        return SAGEModel(cfg.node_dim, cfg.hidden, cfg.layers, drop_rate=cfg.dropout)
+    if cfg.model == "attentivefp":
+        return AttentiveFPModel(cfg.node_dim, cfg.edge_dim, cfg.hidden, cfg.layers, drop_rate=cfg.dropout)
     raise ValueError(f"unknown model {cfg.model!r}")
 
 

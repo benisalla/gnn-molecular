@@ -38,7 +38,9 @@ def test_config_round_trip():
     assert Config.from_dict(cfg.to_dict()) == cfg
 
 
-@pytest.mark.parametrize("bad", [{"model": "gat"}, {"hidden": 0}, {"hops": -1}, {"dropout": 1.0}])
+@pytest.mark.parametrize(
+    "bad", [{"model": "gnn"}, {"hidden": 0}, {"hops": -1}, {"dropout": 1.0}, {"model": "gat", "hidden": 30, "heads": 4}]
+)
 def test_config_rejects_bad_values(bad):
     with pytest.raises(ValueError):
         Config(**bad)

@@ -3,12 +3,12 @@ import json
 import pytest
 import torch
 
-from mgnn.config import Config
+from mgnn.config import MODELS, Config
 from mgnn.predict import load_model, predict
 from mgnn.train import fit, parse_args
 
 
-@pytest.mark.parametrize("name", ["gcn", "mpnn", "dcnn"])
+@pytest.mark.parametrize("name", MODELS)
 def test_fit_lowers_loss_and_writes_outputs(name, graphs, tmp_path):
     cfg = Config.for_model(name, epochs=40, batch_size=8, lr=5e-3, output_dir=str(tmp_path), device="cpu")
     final = fit(cfg, graphs=graphs, verbose=False)
