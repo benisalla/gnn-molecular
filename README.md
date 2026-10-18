@@ -1,4 +1,4 @@
-# Multi-Graph-NN
+# GNN Molecular
 
 **Seven graph neural networks (GCN, MPNN, DCNN, GIN, GAT, GraphSAGE, AttentiveFP) that predict how well a molecule dissolves in water, straight from its graph of atoms and bonds.**
 

@@ -3,7 +3,7 @@ requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
 
 [project]
-name = "multi-graph-nn"
+name = "gnn-molecular"
 version = "0.1.0"
 description = "GCN, MPNN and DCNN graph neural networks for molecular solubility (ESOL)."
 readme = "README.md"
